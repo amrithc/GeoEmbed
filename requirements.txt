@@ -1,0 +1,23 @@
+# Core ML
+torch>=2.1.0
+torchvision>=0.16.0
+transformers>=4.35.0
+
+# Embedding storage
+zarr>=2.16.0
+numpy>=1.24.0
+
+# Vector search
+faiss-cpu>=1.7.4
+
+# Data
+Pillow>=10.0.0
+pandas>=2.0.0
+tqdm>=4.66.0
+
+# App
+streamlit>=1.28.0
+
+# Evaluation & notebooks
+scikit-learn>=1.3.0
+matplotlib>=3.7.0
