@@ -28,11 +28,24 @@ st.caption("Find visually similar satellite tiles using image or text queries.")
 # ── Sidebar controls ──────────────────────────────────────────────────────────
 with st.sidebar:
     st.header("Settings")
-    model_name = st.selectbox(
-        "Embedding model",
-        ["clip", "dinov2", "resnet50"],
-        help="CLIP: shared image+text space | DINOv2: best visual clustering | ResNet50: classic CNN baseline",
+
+    # Search type selection
+    search_type = st.radio(
+        "Search mode",
+        ["Single Model", "Ensemble (3 models)"],
+        help="Single Model: use one embedding model | Ensemble: combine ResNet50 + DINOv2 + CLIP (slower but more accurate)",
     )
+
+    if search_type == "Single Model":
+        model_name = st.selectbox(
+            "Embedding model",
+            ["clip", "dinov2", "resnet50"],
+            help="CLIP: shared image+text space | DINOv2: best visual clustering | ResNet50: classic CNN baseline",
+        )
+    else:
+        model_name = "ensemble"
+        st.info("🎯 Ensemble combines all 3 models for improved precision (0.95 vs 0.90)")
+
     index_type = st.selectbox(
         "FAISS index type",
         ["flat", "hnsw", "ivf"],
@@ -42,8 +55,12 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("**Model info**")
-    dim_map = {"resnet50": 2048, "dinov2": 384, "clip": 512}
-    st.markdown(f"Embedding dim: `{dim_map[model_name]}`")
+    if model_name == "ensemble":
+        st.markdown("Embedding dim: `2944` (384 + 512 + 2048)")
+        st.markdown("Models: `DINOv2` + `CLIP` + `ResNet50`")
+    else:
+        dim_map = {"resnet50": 2048, "dinov2": 384, "clip": 512}
+        st.markdown(f"Embedding dim: `{dim_map[model_name]}`")
 
     # Check which indexes exist
     available = []
@@ -52,6 +69,8 @@ with st.sidebar:
             available.append(m)
     if available:
         st.markdown(f"Built models: `{', '.join(available)}`")
+        if model_name == "ensemble" and len(available) < 3:
+            st.warning(f"⚠️ Need all 3 models for ensemble. Built: {', '.join(available)}")
     else:
         st.warning("No indexes found. Run the build scripts first.")
 
@@ -100,7 +119,7 @@ def render_results(results) -> None:
 
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
-tab_image, tab_text, tab_info = st.tabs(["Image Search", "Text Search", "How It Works"])
+tab_image, tab_text, tab_ensemble, tab_info = st.tabs(["Image Search", "Text Search", "Ensemble Info", "How It Works"])
 
 # ── Image Search Tab ──────────────────────────────────────────────────────────
 with tab_image:
@@ -120,19 +139,40 @@ with tab_image:
 
     with col_results:
         if uploaded:
-            if not check_index_available(model_name, index_type):
-                st.error(
-                    f"No index found for model=`{model_name}`, type=`{index_type}`. "
-                    f"Run: `python scripts/03_build_index.py --model {model_name} --index-type {index_type}`"
-                )
-            else:
-                with st.spinner(f"Searching with {model_name}..."):
-                    from geoembded.search.image_search import ImageSearchEngine
-                    engine = ImageSearchEngine(model_name, index_type)
-                    results = engine.search(query_img, k=k)
+            # Check if required indexes exist
+            if model_name == "ensemble":
+                models_needed = ["resnet50", "dinov2", "clip"]
+                missing = [m for m in models_needed if not check_index_available(m, index_type)]
+                if missing:
+                    st.error(
+                        f"Missing indexes for: {', '.join(missing)}. "
+                        f"Run: `python scripts/03_build_index.py --model all --index-type {index_type}`"
+                    )
+                else:
+                    with st.spinner(f"Searching with ensemble (3 models)..."):
+                        from geoembded.search.ensemble_search import EnsembleSearchEngine
+                        engine = EnsembleSearchEngine(
+                            models=["dinov2", "clip", "resnet50"],
+                            index_type=index_type
+                        )
+                        results = engine.search(query_img, k=k)
 
-                st.markdown(f"**Top {k} matches** (model: `{model_name}`, index: `{index_type}`)")
-                render_results(results)
+                    st.markdown(f"**Top {k} matches** (ensemble: DINOv2 + CLIP + ResNet50, index: `{index_type}`)")
+                    render_results(results)
+            else:
+                if not check_index_available(model_name, index_type):
+                    st.error(
+                        f"No index found for model=`{model_name}`, type=`{index_type}`. "
+                        f"Run: `python scripts/03_build_index.py --model {model_name} --index-type {index_type}`"
+                    )
+                else:
+                    with st.spinner(f"Searching with {model_name}..."):
+                        from geoembded.search.image_search import ImageSearchEngine
+                        engine = ImageSearchEngine(model_name, index_type)
+                        results = engine.search(query_img, k=k)
+
+                    st.markdown(f"**Top {k} matches** (model: `{model_name}`, index: `{index_type}`)")
+                    render_results(results)
 
 # ── Text Search Tab ───────────────────────────────────────────────────────────
 with tab_text:
@@ -175,6 +215,59 @@ with tab_text:
 
             st.markdown(f"**Top {k} results for:** _{text_query}_")
             render_results(results)
+
+# ── Ensemble Info Tab ─────────────────────────────────────────────────────────
+with tab_ensemble:
+    st.markdown("""
+## Ensemble Search: Combining Three Models
+
+The **Ensemble mode** combines three complementary embedding models:
+
+### How It Works
+
+```
+Forest Query Image
+    ↓
+├─ DINOv2 (384-dim)     → Captures structure, patches
+├─ CLIP (512-dim)       → Captures semantic meaning
+└─ ResNet50 (2048-dim)  → Captures texture, color
+    ↓
+Concatenate (2944-dim combined embedding)
+    ↓
+FAISS Similarity Search
+    ↓
+Top-K Results
+```
+
+1. **Complementary Strengths**
+   - DINOv2 excels at finding patches and structure
+   - CLIP understands semantic concepts
+   - ResNet50 captures color and texture
+
+2. **Compensates for Weaknesses**
+   - DINOv2 misses semantic context? → CLIP covers it
+   - CLIP has domain gap? → DINOv2 + ResNet compensate
+   - ResNet fails on unusual tiles? → DINOv2 catches it
+
+3. **Higher Dimensionality**
+   - Single model: 384–2048 dims
+   - Ensemble: 2944 dims
+   - More signal = better separation in embedding space
+
+
+### When to Use Each
+
+**Use Single Model when:**
+- Speed is critical (real-time applications)
+- You care about a specific characteristic (texture, structure, semantics)
+- Memory/storage is limited
+
+**Use Ensemble when:**
+- Precision matters most
+- You have time for slower queries
+- You want the most robust results
+- You're evaluating/benchmarking
+    """)
 
 # ── How It Works Tab ──────────────────────────────────────────────────────────
 with tab_info:
