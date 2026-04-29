@@ -239,22 +239,10 @@ FAISS Similarity Search
 Top-K Results
 ```
 
-### Performance Comparison
-
-| Model | Precision@10 | Speed | Best For |
-|-------|--------------|-------|----------|
-| ResNet50 | 0.82 | 8ms | Texture |
-| DINOv2 | 0.90 | 35ms | **Structure** ⭐ |
-| CLIP | 0.78 | 40ms | Semantics |
-| **Ensemble** | **0.95** | **85ms** | **Everything** ⭐⭐⭐ |
-
-### Why Ensemble is Better
-
 1. **Complementary Strengths**
    - DINOv2 excels at finding patches and structure
    - CLIP understands semantic concepts
    - ResNet50 captures color and texture
-   - Together: 0.95 precision (vs. 0.90 alone)
 
 2. **Compensates for Weaknesses**
    - DINOv2 misses semantic context? → CLIP covers it
@@ -266,17 +254,6 @@ Top-K Results
    - Ensemble: 2944 dims
    - More signal = better separation in embedding space
 
-### Trade-offs
-
-✅ **Pros:**
-- Best precision (0.95 vs. 0.90)
-- Robust to edge cases
-- Handles diverse imagery
-
-❌ **Cons:**
-- Slower queries (85ms vs. 35ms)
-- Higher memory usage
-- Requires all 3 models indexed
 
 ### When to Use Each
 
